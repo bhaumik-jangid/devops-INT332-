@@ -1,0 +1,63 @@
+version: "3.9"
+
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: pg-database
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - backend-net
+    # NOTE: No 'ports' mapping — DB not accessible from host!
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Spring Boot Application ──────────────────────────
+  springapp:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: spring-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+    networks:
+      - backend-net
+
+  # ── Adminer (Database UI) ───────────────────────────
+  adminer:
+    image: adminer:latest
+    container_name: db-admin
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    networks:
+      - backend-net
+    depends_on:
+      - postgres
+
+volumes:
+  pg_data:
+
+networks:
+  backend-net:
+    driver: bridge

@@ -1,0 +1,51 @@
+version: "3.9"
+
+services:
+
+  # ── MongoDB Database ────────────────────────────────
+  mongodb:
+    image: mongo:7.0
+    container_name: mongo-db
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
+    volumes:
+      - mongo_data:/data/db
+      - ./mongo-init:/docker-entrypoint-initdb.d:ro  # init scripts
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  # ── Node.js Backend ─────────────────────────────────
+  backend:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: node-api
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      MONGO_URI: ${MONGO_URI}
+      PORT: ${PORT}
+      NODE_ENV: ${NODE_ENV}
+    volumes:
+      - ./app:/app              # bind mount for hot reload
+      - /app/node_modules       # anonymous volume — don't overwrite
+    networks:
+      - app-network
+
+volumes:
+  mongo_data:
+
+networks:
+  app-network:
+    driver: bridge
